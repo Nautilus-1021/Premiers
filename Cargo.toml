@@ -1,0 +1,8 @@
+[workspace]
+resolver = "2"
+members = ["primes_rust", "primes_gl", "primes_export"]
+
+[profile.release]
+lto = true
+strip = true
+opt-level = 3
