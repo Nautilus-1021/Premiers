@@ -2,6 +2,9 @@
 resolver = "2"
 members = ["primes_rust", "primes_gl", "primes_export"]
 
+[profile.dev]
+opt-level = 0
+
 [profile.release]
 lto = true
 strip = true

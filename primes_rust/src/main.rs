@@ -1,58 +1,101 @@
-use std::{iter::repeat_with, sync::atomic::{AtomicU32, AtomicUsize, Ordering}, thread, time::Instant};
-use primes_export::PrimesExport;
+use std::{sync::atomic::{AtomicU32, AtomicUsize, Ordering}, thread, time::Instant};
 
-static COUNTER: AtomicU32 = AtomicU32::new(3);
-static PRIMES_COUNTER: AtomicUsize = AtomicUsize::new(0);
+const NMB_PREMIERS: usize = 1_000_000;
 
 fn main() {
-    let mut buf = repeat_with(|| AtomicU32::new(0)).take(1_000_000).collect::<Vec<_>>();
+    let mut values = [const { AtomicU32::new(0) }; NMB_PREMIERS];
+    let cnt = AtomicU32::new(3);
+    let prime_cnt = AtomicUsize::new(0);
+
+    println!("Génération des nombres premiers");
 
     let t1 = Instant::now();
     thread::scope(|th_scope| {
-        for _idx in 0..12 {
-            let _th_handle = th_scope.spawn(|| thread_main(&buf));
+        for _ in 0..4 {
+            th_scope.spawn(|| {
+                let mut local_pr_cnt = prime_cnt.load(Ordering::SeqCst);
+                let mut act_nmb;
+                'outer: while local_pr_cnt < NMB_PREMIERS {
+                    act_nmb = cnt.fetch_add(2, Ordering::SeqCst);
+    
+                    local_pr_cnt = prime_cnt.load(Ordering::SeqCst);
+                    let sqrt_nmb = (act_nmb as f64).sqrt() as u32 + 20;
+                    for pr_idx in 0..local_pr_cnt {
+                        let act_pr = values[pr_idx].load(Ordering::SeqCst);
+                        if act_pr == 0 {
+                            panic!("0 encountered at #{pr_idx}")
+                        }
+                        /*if act_pr == sqrt_nmb {
+                            println!("Carré parfait ! ({act_pr})");
+                        }*/
+                        if act_pr > sqrt_nmb {
+                            break;
+                        }
+
+                        if act_nmb % act_pr == 0 {
+                            continue 'outer;
+                        }
+                    }
+    
+                    local_pr_cnt = prime_cnt.fetch_add(1, Ordering::SeqCst);
+                    if local_pr_cnt < NMB_PREMIERS {
+                        values[local_pr_cnt].store(act_nmb, Ordering::SeqCst);
+                    }
+                }
+            });
         }
     });
 
-    let duration = t1.elapsed();
+    let tt = t1.elapsed();
 
-    buf.sort_unstable_by(|a, b| a.load(Ordering::Relaxed).cmp(&b.load(Ordering::Relaxed)));
+    println!("Tri des nombres");
 
-    let mut expt = PrimesExport::new("rust + thread2.expt").unwrap();
+    values.sort_unstable_by(|a , b| a.load(Ordering::SeqCst).cmp(&b.load(Ordering::SeqCst)));
 
-    for el in buf.iter().map(|nmb| { nmb.load(Ordering::Relaxed) }) {
-        expt.export_prime(el).unwrap();
+    println!("Vérification");
 
-        if el % 100 == 1 {
-            print!("\x1b[2K\x1b[1G{}", el);
+    let mut pr_cnt = 0;
+    let mut cnt = 3;
+    while pr_cnt < NMB_PREMIERS {
+        let chk_pr = values[pr_cnt].load(Ordering::SeqCst);
+        let (verif, divi) = verif_premier(cnt);
+
+        if !verif {
+            if cnt == chk_pr {
+                println!("{cnt} n'est pas premier (divi: {divi})");
+                pr_cnt += 1;
+            }
+
+            cnt += 2;
+            continue;
         }
+
+        if cnt < chk_pr {
+            println!("{cnt} passé");
+        } else if cnt > chk_pr {
+            println!("{cnt}, {chk_pr}, {pr_cnt}");
+            panic!("bug");
+        } else if cnt == chk_pr {
+            pr_cnt += 1;
+        }
+
+        cnt += 2;
     }
-    println!();
 
-    expt.close().unwrap();
-
-    println!("Duration: {}s", duration.as_secs_f64());
-    println!("Fin: {}", COUNTER.load(Ordering::Relaxed));
+    println!("Temps: {:.3}s", tt.as_secs_f64());
 }
 
-fn thread_main(primes: &Vec<AtomicU32>) {
-    'outer: while PRIMES_COUNTER.load(Ordering::Relaxed) < 1_000_000 {
-        let act_nmb = COUNTER.fetch_add(2, Ordering::SeqCst);
-        let sqrt_nmb = f64::from(act_nmb).sqrt().round() as u32;
-
-        for prime_idx in 0..PRIMES_COUNTER.load(Ordering::Relaxed) {
-            let prime = primes[prime_idx].load(Ordering::Relaxed);
-            if prime > sqrt_nmb {
-                break;
-            }
-
-            if act_nmb % prime == 0 {
-                continue 'outer;
-            }
-        }
-
-        let prime_idx = PRIMES_COUNTER.fetch_add(1, Ordering::SeqCst);
-        if prime_idx >= 1_000_000 { continue; }
-        primes[prime_idx].store(act_nmb, Ordering::SeqCst);
+fn verif_premier(nmb: u32) -> (bool, u32) {
+    if nmb % 2 == 0 {
+        return (false, 2)
     }
+
+    let sqrt_nmb = f64::from(nmb).sqrt().ceil() as u32;
+    for chk in (3..=sqrt_nmb).step_by(2) {
+        if nmb % chk == 0 {
+            return (false, chk)
+        }
+    }
+
+    (true, 0)
 }
