@@ -1,46 +1,35 @@
-use std::{sync::atomic::{AtomicU32, AtomicUsize, Ordering}, thread, time::Instant};
+use std::{sync::atomic::{AtomicU32, Ordering}, thread, time::Instant};
 
-const NMB_PREMIERS: usize = 1_000_000;
+mod atomic_vec;
+
+const NMB_PREMIERS: u32 = 10_000_000;
 
 fn main() {
-    let mut values = [const { AtomicU32::new(0) }; NMB_PREMIERS];
+    let x = NMB_PREMIERS as f64;
+    let prime_estimate = (x / x.ln()).round() as usize;
+    let primes_max = (x / (x.ln() - 1.1)).ceil() as usize;
+
+    let primes = atomic_vec::AtomicVec::new(prime_estimate, primes_max - prime_estimate + 3);
     let cnt = AtomicU32::new(3);
-    let prime_cnt = AtomicUsize::new(0);
 
     println!("Génération des nombres premiers");
 
     let t1 = Instant::now();
     thread::scope(|th_scope| {
-        for _ in 0..4 {
+        for _ in 0..*atomic_vec::PARALLELISM {
             th_scope.spawn(|| {
-                let mut local_pr_cnt = prime_cnt.load(Ordering::SeqCst);
                 let mut act_nmb;
-                'outer: while local_pr_cnt < NMB_PREMIERS {
+                'outer: while cnt.load(Ordering::Relaxed) < NMB_PREMIERS {
                     act_nmb = cnt.fetch_add(2, Ordering::SeqCst);
     
-                    local_pr_cnt = prime_cnt.load(Ordering::SeqCst);
-                    let sqrt_nmb = (act_nmb as f64).sqrt() as u32 + 20;
-                    for pr_idx in 0..local_pr_cnt {
-                        let act_pr = values[pr_idx].load(Ordering::SeqCst);
-                        if act_pr == 0 {
-                            panic!("0 encountered at #{pr_idx}")
-                        }
-                        /*if act_pr == sqrt_nmb {
-                            println!("Carré parfait ! ({act_pr})");
-                        }*/
-                        if act_pr > sqrt_nmb {
-                            break;
-                        }
-
-                        if act_nmb % act_pr == 0 {
+                    let sqrt_nmb = (act_nmb as f64).sqrt() as u32;
+                    for divi in (3..=sqrt_nmb).step_by(2) {
+                        if act_nmb % divi == 0 {
                             continue 'outer;
                         }
                     }
-    
-                    local_pr_cnt = prime_cnt.fetch_add(1, Ordering::SeqCst);
-                    if local_pr_cnt < NMB_PREMIERS {
-                        values[local_pr_cnt].store(act_nmb, Ordering::SeqCst);
-                    }
+
+                    primes.push(act_nmb).unwrap();
                 }
             });
         }
@@ -48,16 +37,20 @@ fn main() {
 
     let tt = t1.elapsed();
 
+    let realloc_num = primes.get_realloc_nmb();
+
+    let mut primes = primes.iter().collect::<Vec<u32>>();
+
     println!("Tri des nombres");
 
-    values.sort_unstable_by(|a , b| a.load(Ordering::SeqCst).cmp(&b.load(Ordering::SeqCst)));
+    primes.sort_unstable();
 
     println!("Vérification");
 
     let mut pr_cnt = 0;
     let mut cnt = 3;
-    while pr_cnt < NMB_PREMIERS {
-        let chk_pr = values[pr_cnt].load(Ordering::SeqCst);
+    while pr_cnt < primes.len() {
+        let chk_pr = primes[pr_cnt];
         let (verif, divi) = verif_premier(cnt);
 
         if !verif {
@@ -82,7 +75,7 @@ fn main() {
         cnt += 2;
     }
 
-    println!("Temps: {:.3}s", tt.as_secs_f64());
+    println!("Temps: {:.3}s, {pr_cnt} nombres premiers, {realloc_num} réallocations", tt.as_secs_f64());
 }
 
 fn verif_premier(nmb: u32) -> (bool, u32) {
