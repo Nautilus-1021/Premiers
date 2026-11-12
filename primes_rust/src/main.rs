@@ -15,15 +15,21 @@ fn main() {
     println!("Génération des nombres premiers");
 
     let t1 = Instant::now();
+
+    let diviseurs = gen_premiers_simple((NMB_PREMIERS as f64).sqrt().ceil() as usize);
+
     thread::scope(|th_scope| {
         for _ in 0..*atomic_vec::PARALLELISM {
             th_scope.spawn(|| {
                 let mut act_nmb;
                 'outer: while cnt.load(Ordering::Relaxed) < NMB_PREMIERS {
                     act_nmb = cnt.fetch_add(2, Ordering::SeqCst);
-    
-                    let sqrt_nmb = (act_nmb as f64).sqrt() as u32;
-                    for divi in (3..=sqrt_nmb).step_by(2) {
+
+                    for divi in &diviseurs {
+                        if divi.pow(2) > act_nmb {
+                            break;
+                        }
+
                         if act_nmb % divi == 0 {
                             continue 'outer;
                         }
@@ -91,4 +97,29 @@ fn verif_premier(nmb: u32) -> (bool, u32) {
     }
 
     (true, 0)
+}
+
+fn gen_premiers_simple(limite: usize) -> Vec<u32> {
+    let mut lst = Vec::with_capacity(limite);
+    lst.push(2);
+    'outer: for nmb in (3..=limite as u32).step_by(2) {
+        for divi in &lst {
+            if nmb % divi == 0 {
+                continue 'outer
+            }
+        }
+
+        lst.push(nmb);
+    }
+    lst
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gen_simple() {
+        assert_eq!(&gen_premiers_simple(20), &[2, 3, 5, 7, 11, 13, 17, 19]);
+    }
 }
