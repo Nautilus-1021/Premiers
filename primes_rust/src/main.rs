@@ -6,10 +6,9 @@ const NMB_PREMIERS: u32 = 10_000_000;
 
 fn main() {
     let x = NMB_PREMIERS as f64;
-    let prime_estimate = (x / x.ln()).round() as usize;
     let primes_max = (x / (x.ln() - 1.1)).ceil() as usize;
 
-    let primes = atomic_vec::AtomicVec::new(prime_estimate, primes_max - prime_estimate + 3);
+    let primes = atomic_vec::AtomicVec::new(primes_max, 10);
     let cnt = AtomicU32::new(3);
 
     println!("Génération des nombres premiers");
@@ -23,7 +22,7 @@ fn main() {
             th_scope.spawn(|| {
                 let mut act_nmb;
                 'outer: while cnt.load(Ordering::Relaxed) < NMB_PREMIERS {
-                    act_nmb = cnt.fetch_add(2, Ordering::SeqCst);
+                    act_nmb = cnt.fetch_add(2, Ordering::Relaxed);
 
                     for divi in &diviseurs {
                         if divi.pow(2) > act_nmb {
@@ -81,7 +80,7 @@ fn main() {
         cnt += 2;
     }
 
-    println!("Temps: {:.3}s, {pr_cnt} nombres premiers, {realloc_num} réallocations", tt.as_secs_f64());
+    println!("Temps: {:.3}s, {pr_cnt} nombres premiers (MAX: {primes_max}), {realloc_num} réallocations", tt.as_secs_f64());
 }
 
 fn verif_premier(nmb: u32) -> (bool, u32) {

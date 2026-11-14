@@ -33,14 +33,14 @@ impl AtomicVec {
     }
 
     pub fn push(&self, nmb: u32) -> Result<(), &'static str> {
-        if self.usage.load(Ordering::SeqCst) + *PARALLELISM < self.alloc_size.load(Ordering::SeqCst) {
+        if self.usage.load(Ordering::Relaxed) + *PARALLELISM < self.alloc_size.load(Ordering::Relaxed) {
             let Ok(lock) = self.storage.read() else { return Err("Impossible d'acquérir le RwLock") };
 
-            assert_eq!(lock.len(), self.alloc_size.load(Ordering::SeqCst), "Mismatch between advertised allocation and reality");
+            assert_eq!(lock.len(), self.alloc_size.load(Ordering::Relaxed), "Mismatch between advertised allocation and reality");
 
-            let idx = self.usage.fetch_add(1, Ordering::SeqCst);
+            let idx = self.usage.fetch_add(1, Ordering::Relaxed);
 
-            let res = lock[idx].swap(nmb, Ordering::SeqCst);
+            let res = lock[idx].swap(nmb, Ordering::Relaxed);
             if res != 0 {
                 return Err("Value was already initialized (no realloc)")
             }
