@@ -36,7 +36,9 @@ fn gen_premiers_multithread(limite: u32) -> (Vec<u32>, (Duration, usize)) {
 
     let primes = atomic_vec::AtomicVec::new(primes_max, 10);
     primes.push(2).unwrap();
-    let cnt = AtomicU32::new(3);
+    primes.push(3).unwrap();
+    primes.push(5).unwrap();
+    let cnt = AtomicU32::new(7);
 
     println!("Génération des nombres premiers");
 
@@ -48,20 +50,28 @@ fn gen_premiers_multithread(limite: u32) -> (Vec<u32>, (Duration, usize)) {
         for _ in 0..*atomic_vec::PARALLELISM {
             th_scope.spawn(|| {
                 let mut act_nmb;
-                'outer: while cnt.load(Ordering::Relaxed) < limite {
-                    act_nmb = cnt.fetch_add(2, Ordering::Relaxed);
+                while cnt.load(Ordering::Relaxed) < limite {
+                    act_nmb = cnt.fetch_add(30, Ordering::Relaxed);
 
-                    for divi in &diviseurs {
-                        if divi.pow(2) > act_nmb {
-                            break;
+                    'whfact: for inc in [4, 2, 4, 2, 4, 6, 2, 6] {
+                        for divi in &diviseurs {
+                            if divi.pow(2) > act_nmb {
+                                break;
+                            }
+    
+                            if act_nmb % divi == 0 {
+                                act_nmb += inc;
+                                continue 'whfact;
+                            }
+                        }
+    
+                        if act_nmb <= limite {
+                            primes.push(act_nmb).unwrap();
                         }
 
-                        if act_nmb % divi == 0 {
-                            continue 'outer;
-                        }
+                        act_nmb += inc;
                     }
 
-                    primes.push(act_nmb).unwrap();
                 }
             });
         }
